@@ -1,0 +1,6 @@
+@CargaApi_HostAddress = http://localhost:5065
+
+GET {{CargaApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
