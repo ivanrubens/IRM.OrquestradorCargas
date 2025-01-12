@@ -1,4 +1,5 @@
 ﻿using IRM.Orquestrador.Shared.Models;
+using Polly;
 using System.Text;
 using System.Text.Json;
 
@@ -28,12 +29,17 @@ public class OrquestradorCargasService
         int maxTarefasParalelas = 5; // Ajuste conforme necessário
         var semaphore = new SemaphoreSlim(maxTarefasParalelas);
 
+        var retryPolicy = Policy
+        .Handle<HttpRequestException>()
+        .Or<TaskCanceledException>()
+        .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
+
         var tarefas = listaCargas.Select(async carga =>
         {
             await semaphore.WaitAsync();
             try
             {
-                await ProcessarCargaAsyncDeterminado(carga);
+                await retryPolicy.ExecuteAsync(() => ProcessarCargaAsync(carga));
             }
             finally
             {
@@ -62,7 +68,27 @@ public class OrquestradorCargasService
         return JsonSerializer.Deserialize<List<Carga>>(content);
     }
 
-    private async Task ProcessarCargaAsync(string endpoint, Carga carga)
+    private async Task ProcessarCargaAsync(Carga carga)
+    {
+        try
+        {
+            string endpoint = carga.Situacao switch
+            {
+                "P" => "/api/v1/processar/carregar-temp",
+                "T" => "/api/v1/processar/carregar-controle",
+                "C" => "/api/v1/processar/carregar-top",
+                _ => throw new InvalidOperationException($"Status inválido: {carga.Situacao}")
+            };
+
+            await ChamarEndpointCarga(endpoint, carga);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erro ao processar carga {carga.SeqCarga}: {ex.Message}");
+        }
+    }
+
+    private async Task ChamarEndpointCarga(string endpoint, Carga carga)
     {
         Console.WriteLine($"Processando carga {carga.SeqCarga} no endpoint {endpoint}...");
 
@@ -94,26 +120,6 @@ public class OrquestradorCargasService
                     Console.WriteLine($" - Código Erro: {erro.CodErro}, Mensagem: {erro.MsgErro}");
                 }
             }
-        }
-    }
-
-    private async Task ProcessarCargaAsyncDeterminado(Carga carga)
-    {
-        try
-        {
-            string endpoint = carga.Situacao switch
-            {
-                "P" => "/api/v1/processar/carregar-temp",
-                "T" => "/api/v1/processar/carregar-controle",
-                "C" => "/api/v1/processar/carregar-top",
-                _ => throw new InvalidOperationException($"Status inválido: {carga.Situacao}")
-            };
-
-            await ProcessarCargaAsync(endpoint, carga);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Erro ao processar carga {carga.SeqCarga}: {ex.Message}");
         }
     }
 }
