@@ -4,11 +4,11 @@ using System.Text.Json;
 
 namespace IRM.OrquestradorWorker;
 
-public class CargaSequencialCallbackMultipleService
+public class OrquestradorCargasService
 {
     private readonly HttpClient _httpClient;
 
-    public CargaSequencialCallbackMultipleService(HttpClient httpClient)
+    public OrquestradorCargasService(HttpClient httpClient)
     {
         _httpClient = httpClient;
     }
@@ -16,6 +16,8 @@ public class CargaSequencialCallbackMultipleService
     public async Task ProcessarCargasAsync()
     {
         // Obter a lista de cargas
+        Console.WriteLine("Obtendo nova lista de cargas a processar...");
+
         var listaCargas = await ObterListaCargasAsync();
         if (listaCargas == null || listaCargas.Count == 0)
         {
@@ -23,46 +25,27 @@ public class CargaSequencialCallbackMultipleService
             return;
         }
 
-        // Lista para armazenar tarefas de processamento
-        var tarefas = new List<Task>();
+        int maxTarefasParalelas = 5; // Ajuste conforme necessário
+        var semaphore = new SemaphoreSlim(maxTarefasParalelas);
 
-        foreach (var carga in listaCargas)
+        var tarefas = listaCargas.Select(async carga =>
         {
-            tarefas.Add(Task.Run(async () =>
+            await semaphore.WaitAsync();
+            try
             {
-                try
-                {
-                    switch (carga.Situacao)
-                    {
-                        case "P":
-                            await ProcessarCargaAsync("/api/v1/processar/carregar-temp", carga);
-                            break;
-                        case "T":
-                            await ProcessarCargaAsync("/api/v1/processar/carregar-controle", carga);
-                            break;
-                        case "C":
-                            await ProcessarCargaAsync("/api/v1/processar/carregar-top", carga);
-                            break;
-                        default:
-                            Console.WriteLine($"Carga {carga.SeqCarga} com status inválido: {carga.Situacao}");
-                            break;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Erro ao processar carga {carga.SeqCarga}: {ex.Message}");
-                }
-            }));
-        }
+                await ProcessarCargaAsyncDeterminado(carga);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
 
-        // Aguarda a conclusão de todas as tarefas
         await Task.WhenAll(tarefas);
 
         // Callback após todas as tarefas
-        Console.WriteLine("Todas as cargas foram processadas. Obtendo nova lista atualizada...");
-        //await ObterListaCargasAsync();
+        Console.WriteLine("Todas as cargas foram processadas.");
     }
-
 
     private async Task<List<Carga>> ObterListaCargasAsync()
     {
@@ -111,6 +94,26 @@ public class CargaSequencialCallbackMultipleService
                     Console.WriteLine($" - Código Erro: {erro.CodErro}, Mensagem: {erro.MsgErro}");
                 }
             }
+        }
+    }
+
+    private async Task ProcessarCargaAsyncDeterminado(Carga carga)
+    {
+        try
+        {
+            string endpoint = carga.Situacao switch
+            {
+                "P" => "/api/v1/processar/carregar-temp",
+                "T" => "/api/v1/processar/carregar-controle",
+                "C" => "/api/v1/processar/carregar-top",
+                _ => throw new InvalidOperationException($"Status inválido: {carga.Situacao}")
+            };
+
+            await ProcessarCargaAsync(endpoint, carga);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erro ao processar carga {carga.SeqCarga}: {ex.Message}");
         }
     }
 }

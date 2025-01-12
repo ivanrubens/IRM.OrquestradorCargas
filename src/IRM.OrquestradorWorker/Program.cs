@@ -16,7 +16,7 @@ public class Program
         var builder = Host.CreateApplicationBuilder(args);
 
         // Configura o servi�o HTTP para a classe CargaSequencialCallbackMultipleService
-        builder.Services.AddHttpClient<CargaSequencialCallbackMultipleService>(client =>
+        builder.Services.AddHttpClient<OrquestradorCargasService>(client =>
         {
             client.BaseAddress = new Uri("https://localhost:7287");
         });

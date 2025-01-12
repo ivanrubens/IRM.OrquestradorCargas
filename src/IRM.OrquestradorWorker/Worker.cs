@@ -2,9 +2,9 @@ namespace IRM.OrquestradorWorker;
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
-    private readonly CargaSequencialCallbackMultipleService _cargaService;
+    private readonly OrquestradorCargasService _cargaService;
 
-    public Worker(ILogger<Worker> logger, CargaSequencialCallbackMultipleService cargaService)
+    public Worker(ILogger<Worker> logger, OrquestradorCargasService cargaService)
     {
         _logger = logger;
         _cargaService = cargaService;
